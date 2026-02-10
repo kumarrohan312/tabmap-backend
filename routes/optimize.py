@@ -41,8 +41,9 @@ class OptimizeRequest(BaseModel):
 
 class OptimizeResponse(BaseModel):
     budget_usd: float
-    recommended_route_id: str
-    routes_ranked: List[Dict]
+    no_toll_option: Dict
+    budget_option: Dict
+    alternatives: List[Dict]
     advisories: List[str]
 
 
@@ -120,7 +121,8 @@ async def optimize_routes(request: OptimizeRequest):
         result = optimizer.optimize_routes(candidates_with_tolls, budget)
         
         elapsed_time = time.time() - start_time
-        logger.info(f"Route optimization completed in {elapsed_time:.2f}s, {len(result['routes_ranked'])} routes")
+        total_routes = 2 + len(result.get('alternatives', []))  # no_toll + budget + alternatives
+        logger.info(f"Route optimization completed in {elapsed_time:.2f}s, {total_routes} routes")
         
         return OptimizeResponse(**result)
     

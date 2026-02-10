@@ -11,23 +11,23 @@ class RoutingOptimizer:
         budget: float
     ) -> Dict:
         """
-        Optimize route selection with priority display order:
-        1. No-toll route (cheapest/minimal toll)
-        2. Fastest route (with all tolls, regardless of budget)
-        3. Other routes within budget, sorted by fastest
+        Optimize route selection with two primary options:
+        1. NO TOLL - Toll-free/cheapest route (avoid all tolls)
+        2. BUDGET - Fastest route within budget (spend UP TO budget for speed)
         
         Args:
             routes: List of route candidates with toll estimates
             budget: Maximum toll budget in USD
         
         Returns:
-            Dict with recommended_route_id, routes_ranked, advisories
+            Dict with no_toll_option, budget_option, alternatives, advisories
         """
         if not routes:
             return {
                 "budget_usd": budget,
-                "recommended_route_id": None,
-                "routes_ranked": [],
+                "no_toll_option": None,
+                "budget_option": None,
+                "alternatives": [],
                 "advisories": ["No routes available"]
             }
         
@@ -39,89 +39,72 @@ class RoutingOptimizer:
             annotated = {
                 "route_id": route.route_id,
                 "eta_seconds": route.eta_seconds,
+                "eta_minutes": round(route.eta_seconds / 60, 0),
                 "distance_meters": route.distance_meters,
+                "distance_miles": round(route.distance_meters / 1609.34, 1),
                 "toll_estimate_usd": toll,
-                "budget_status": "WITHIN" if toll <= budget else "EXCEEDS",
-                "exceeds_by_usd": max(0, round(toll - budget, 2)),
+                "within_budget": toll <= budget,
                 "polyline": route.polyline,
                 "geometry": route.geometry,
-                "route_obj": route
             }
             routes_annotated.append(annotated)
         
-        # Sort and categorize
+        # 1. NO TOLL OPTION - Cheapest route (ideally $0)
         no_toll_route = min(routes_annotated, key=lambda r: r["toll_estimate_usd"])
+        no_toll_route["option_type"] = "NO_TOLL"
+        no_toll_route["label"] = "No Toll Route" if no_toll_route["toll_estimate_usd"] < 0.50 else "Cheapest Route"
+        no_toll_route["description"] = f"${no_toll_route['toll_estimate_usd']:.2f} toll • {no_toll_route['eta_minutes']:.0f} min • {no_toll_route['distance_miles']:.1f} mi"
+        
+        # 2. BUDGET OPTION - Fastest route within budget (maximize speed for budget)
+        within_budget = [r for r in routes_annotated if r["within_budget"]]
+        
+        if within_budget:
+            budget_route = min(within_budget, key=lambda r: r["eta_seconds"])
+            budget_route["option_type"] = "BUDGET"
+            budget_route["label"] = f"Best Value (${budget:.0f} Budget)"
+            time_saved = no_toll_route["eta_minutes"] - budget_route["eta_minutes"]
+            budget_route["description"] = f"${budget_route['toll_estimate_usd']:.2f} toll • {budget_route['eta_minutes']:.0f} min • Saves {time_saved:.0f} min"
+        else:
+            # No routes within budget - use cheapest as fallback
+            budget_route = no_toll_route.copy()
+            budget_route["option_type"] = "BUDGET"
+            budget_route["label"] = f"Best Value (${budget:.0f} Budget)"
+            budget_route["description"] = f"No routes within budget - showing cheapest option"
+        
+        # 3. ALTERNATIVES - Other routes (fastest overall, other within budget)
+        alternatives = []
+        added_ids = {no_toll_route["route_id"], budget_route["route_id"]}
+        
+        # Add fastest overall if different and exceeds budget
         fastest_overall = min(routes_annotated, key=lambda r: r["eta_seconds"])
-        within_budget = [r for r in routes_annotated if r["budget_status"] == "WITHIN"]
-        within_budget_sorted = sorted(within_budget, key=lambda r: r["eta_seconds"])
-        
-        # Check if we actually have a toll-free route (very low/zero toll)
-        has_true_no_toll = no_toll_route["toll_estimate_usd"] < 0.50  # Less than 50 cents = toll-free
-        
-        # Determine recommended route (fastest within budget)
-        if within_budget_sorted:
-            recommended_id = within_budget_sorted[0]["route_id"]
-        else:
-            recommended_id = no_toll_route["route_id"]
-        
-        # Build display order: no-toll/cheapest, fastest, then others in budget
-        display_order = []
-        added_ids = set()
-        
-        # 1. Add no-toll/cheapest route first
-        if has_true_no_toll:
-            no_toll_route["reason"] = f"Toll-free route - I-35 only ({(no_toll_route['eta_seconds']/60):.0f} min)"
-        else:
-            no_toll_route["reason"] = f"Lowest toll option - ${no_toll_route['toll_estimate_usd']:.2f} ({(no_toll_route['eta_seconds']/60):.0f} min)"
-        no_toll_route["display_priority"] = 1
-        display_order.append(no_toll_route)
-        added_ids.add(no_toll_route["route_id"])
-        
-        # 2. Add fastest route (if different from no-toll)
         if fastest_overall["route_id"] not in added_ids:
-            fastest_overall["reason"] = f"Fastest route - {(fastest_overall['eta_seconds']/60):.0f} min (${fastest_overall['toll_estimate_usd']:.2f} toll)"
-            fastest_overall["display_priority"] = 2
-            display_order.append(fastest_overall)
+            fastest_overall["option_type"] = "ALTERNATIVE"
+            fastest_overall["label"] = "Fastest Route (Exceeds Budget)"
+            fastest_overall["description"] = f"${fastest_overall['toll_estimate_usd']:.2f} toll • {fastest_overall['eta_minutes']:.0f} min • ${fastest_overall['toll_estimate_usd'] - budget:.2f} over"
+            alternatives.append(fastest_overall)
             added_ids.add(fastest_overall["route_id"])
         
-        # 3. Add other routes within budget (sorted by fastest)
-        priority = 3
-        for route in within_budget_sorted:
+        # Add other routes within budget
+        for route in sorted(within_budget, key=lambda r: r["eta_seconds"]):
             if route["route_id"] not in added_ids:
-                is_recommended = route["route_id"] == recommended_id
-                if is_recommended:
-                    route["reason"] = f"⭐ Recommended - Best balance of time and cost"
-                else:
-                    time_diff = (route["eta_seconds"] - within_budget_sorted[0]["eta_seconds"]) / 60
-                    route["reason"] = f"Within budget (+{time_diff:.0f} min vs fastest)"
-                route["display_priority"] = priority
-                display_order.append(route)
+                route["option_type"] = "ALTERNATIVE"
+                route["label"] = "Alternative Route"
+                route["description"] = f"${route['toll_estimate_usd']:.2f} toll • {route['eta_minutes']:.0f} min"
+                alternatives.append(route)
                 added_ids.add(route["route_id"])
-                priority += 1
-        
-        # 4. Add any remaining routes that exceed budget
-        exceeding = [r for r in routes_annotated if r["route_id"] not in added_ids]
-        for route in sorted(exceeding, key=lambda r: r["eta_seconds"]):
-            route["reason"] = f"Exceeds budget by ${route['exceeds_by_usd']:.2f}"
-            route["display_priority"] = priority
-            display_order.append(route)
-            priority += 1
-        
-        # Clean up route_obj from response
-        for route in display_order:
-            route.pop("route_obj", None)
         
         # Generate advisories
         advisories = []
         if not within_budget:
-            advisories.append(
-                f"No routes within ${budget:.2f} budget. Consider no-toll option or increase budget."
-            )
+            advisories.append(f"⚠️ No routes within ${budget:.2f} budget. Choose No Toll option or increase budget.")
+        elif budget_route["toll_estimate_usd"] < budget * 0.5:
+            advisories.append(f"💡 Budget route only uses ${budget_route['toll_estimate_usd']:.2f} of ${budget:.2f} budget and is fastest option.")
         
         return {
             "budget_usd": budget,
-            "recommended_route_id": recommended_id,
-            "routes_ranked": display_order,
+            "no_toll_option": no_toll_route,
+            "budget_option": budget_route,
+            "alternatives": alternatives,
             "advisories": advisories
         }
     
