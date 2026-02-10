@@ -89,7 +89,7 @@ class MapboxService:
         # Build query parameters
         params = {
             "access_token": self.access_token,
-            "alternatives": "3",  # Request up to 3 alternative routes
+            "alternatives": True,  # Request alternatives (max 2 additional routes)
             "geometries": "geojson",
             "overview": "full",
             "steps": "true"
@@ -108,5 +108,11 @@ class MapboxService:
         # Make API request
         async with httpx.AsyncClient() as client:
             response = await client.get(url, params=params, timeout=10.0)
-            response.raise_for_status()
+            if response.status_code != 200:
+                error_detail = response.text
+                raise httpx.HTTPStatusError(
+                    f"Mapbox API returned {response.status_code}: {error_detail}",
+                    request=response.request,
+                    response=response
+                )
             return response.json()
