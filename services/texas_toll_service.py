@@ -268,8 +268,9 @@ class TexasTollService:
         road_segments = self._extract_road_segments(route)
         
         if not road_segments:
-            # Fallback: estimate based on distance
-            return self._fallback_toll_estimate(route)
+            # No segment data - assume toll-free unless we can identify tolls
+            # This prevents false positives for I-35, US-290, etc.
+            return 0.0
         
         total_toll = 0.0
         
