@@ -1,0 +1,17 @@
+services:
+  - type: web
+    name: tabmap-api
+    runtime: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: MAPBOX_ACCESS_TOKEN
+        sync: false
+      - key: REDIS_URL
+        value: redis://localhost:6379
+      - key: ENVIRONMENT
+        value: production
+      - key: CORS_ORIGINS
+        value: '["https://web-demo-mu-ten.vercel.app", "https://tabmap.vercel.app"]'
+      - key: PYTHON_VERSION
+        value: 3.12.0
