@@ -50,7 +50,8 @@ class RoutingOptimizer:
             routes_annotated.append(annotated)
         
         # 1. NO TOLL OPTION - Cheapest route (ideally $0)
-        no_toll_route = min(routes_annotated, key=lambda r: r["toll_estimate_usd"])
+        no_toll_candidate = min(routes_annotated, key=lambda r: r["toll_estimate_usd"])
+        no_toll_route = no_toll_candidate.copy()
         no_toll_route["option_type"] = "NO_TOLL"
         no_toll_route["label"] = "No Toll Route" if no_toll_route["toll_estimate_usd"] < 0.50 else "Cheapest Route"
         no_toll_route["description"] = f"${no_toll_route['toll_estimate_usd']:.2f} toll • {no_toll_route['eta_minutes']:.0f} min • {no_toll_route['distance_miles']:.1f} mi"
@@ -59,7 +60,8 @@ class RoutingOptimizer:
         within_budget = [r for r in routes_annotated if r["within_budget"]]
         
         if within_budget:
-            budget_route = min(within_budget, key=lambda r: r["eta_seconds"])
+            budget_candidate = min(within_budget, key=lambda r: r["eta_seconds"])
+            budget_route = budget_candidate.copy()
             budget_route["option_type"] = "BUDGET"
             budget_route["label"] = f"Best Value (${budget:.0f} Budget)"
             time_saved = no_toll_route["eta_minutes"] - budget_route["eta_minutes"]
@@ -76,8 +78,9 @@ class RoutingOptimizer:
         added_ids = {no_toll_route["route_id"], budget_route["route_id"]}
         
         # Add fastest overall if different and exceeds budget
-        fastest_overall = min(routes_annotated, key=lambda r: r["eta_seconds"])
-        if fastest_overall["route_id"] not in added_ids:
+        fastest_candidate = min(routes_annotated, key=lambda r: r["eta_seconds"])
+        if fastest_candidate["route_id"] not in added_ids:
+            fastest_overall = fastest_candidate.copy()
             fastest_overall["option_type"] = "ALTERNATIVE"
             fastest_overall["label"] = "Fastest Route (Exceeds Budget)"
             fastest_overall["description"] = f"${fastest_overall['toll_estimate_usd']:.2f} toll • {fastest_overall['eta_minutes']:.0f} min • ${fastest_overall['toll_estimate_usd'] - budget:.2f} over"
@@ -85,13 +88,14 @@ class RoutingOptimizer:
             added_ids.add(fastest_overall["route_id"])
         
         # Add other routes within budget
-        for route in sorted(within_budget, key=lambda r: r["eta_seconds"]):
-            if route["route_id"] not in added_ids:
-                route["option_type"] = "ALTERNATIVE"
-                route["label"] = "Alternative Route"
-                route["description"] = f"${route['toll_estimate_usd']:.2f} toll • {route['eta_minutes']:.0f} min"
-                alternatives.append(route)
-                added_ids.add(route["route_id"])
+        for route_candidate in sorted(within_budget, key=lambda r: r["eta_seconds"]):
+            if route_candidate["route_id"] not in added_ids:
+                alt_route = route_candidate.copy()
+                alt_route["option_type"] = "ALTERNATIVE"
+                alt_route["label"] = "Alternative Route"
+                alt_route["description"] = f"${alt_route['toll_estimate_usd']:.2f} toll • {alt_route['eta_minutes']:.0f} min"
+                alternatives.append(alt_route)
+                added_ids.add(alt_route["route_id"])
         
         # Generate advisories
         advisories = []
