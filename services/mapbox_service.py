@@ -89,7 +89,7 @@ class MapboxService:
         # Build query parameters
         params = {
             "access_token": self.access_token,
-            "alternatives": 3,  # Request up to 3 alternative routes (max allowed)
+            "alternatives": "3",  # Request up to 3 alternative routes
             "geometries": "geojson",
             "overview": "full",
             "steps": "true"
