@@ -2,8 +2,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, field_validator
 from typing import List, Optional, Dict
 from services.mapbox_service import MapboxService
-from services.toll_service import TollService
-from services.austin_toll_service import AustinTollService
+from services.texas_toll_service import TexasTollService
 from services.routing_optimizer import RoutingOptimizer
 from models.route import RoutePreferences
 import os
@@ -73,7 +72,7 @@ async def optimize_routes(request: OptimizeRequest):
         
         mapbox_service = MapboxService(access_token=mapbox_token)
         has_tag = request.has_toll_tag if request.has_toll_tag is not None else True
-        toll_service = AustinTollService(has_toll_tag=has_tag)  # Austin-specific toll pricing
+        toll_service = TexasTollService(has_toll_tag=has_tag)  # Texas-wide toll pricing
         optimizer = RoutingOptimizer()
         
         # Get route candidates from Mapbox (regular routes with alternatives)
